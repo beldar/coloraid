@@ -8,10 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
-    "@ducanh2912/next-pwa": "^10.2.9",
     "culori": "^4.0.1",
     "next": "^15.3.0",
     "react": "^19.0.0",

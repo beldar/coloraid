@@ -17,3 +17,6 @@ next-env.d.ts
 /tests/fixtures/*.png
 /tests/fixtures/*.webp
 /tests/fixtures/*.heic
+
+# Claude Code IDE settings (local only)
+.claude/
