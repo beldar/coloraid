@@ -25,7 +25,8 @@ interface Props {
 }
 
 type Corner = "tl" | "tr" | "br" | "bl";
-type DragType = Corner | "move";
+type Edge = "top" | "bottom" | "left" | "right";
+type DragType = Corner | Edge | "move";
 
 const DEFAULT_QUAD: Quad = {
   tl: { x: 0.15, y: 0.6 },
@@ -35,16 +36,21 @@ const DEFAULT_QUAD: Quad = {
 };
 
 /**
- * Palette photo with a draggable 4-corner grid. The user drags the corners to
- * frame the wells — a quad (not a rectangle) so it fits photos taken at an angle.
- * Each cell is sampled with perspective-aware bilinear interpolation, taking the
- * dark hue and discarding glare. Auto-fits on load so it's usually close.
+ * Palette photo with a draggable grid overlay.
+ *
+ * Controls:
+ *  - 4 corner handles: drag to adjust perspective / individual corners
+ *  - 4 edge midpoint handles: drag to slide a full edge (top/bottom = vertical
+ *    only, left/right = horizontal only) — much easier on mobile
+ *  - Tapping inside the quad moves the whole grid
+ *  - Live color preview rendered in each cell so alignment feedback is instant
  */
 export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props) {
   const displayRef = useRef<HTMLCanvasElement>(null);
   const imageDataRef = useRef<ImageLike | null>(null);
   const [loaded, setLoaded] = useState(0);
   const [quad, setQuad] = useState<Quad>(DEFAULT_QUAD);
+  const [wells, setWells] = useState<DetectedWell[]>([]);
   const drag = useRef<{ type: DragType; startX: number; startY: number; start: Quad } | null>(null);
 
   // Load image; cache full-res pixels.
@@ -69,8 +75,7 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     img.src = imageSrc;
   }, [imageSrc]);
 
-  // Auto-fit on load: frame the saturated wells region (lower half). The user
-  // then nudges the corners to match the photo's perspective.
+  // Auto-fit on load.
   useEffect(() => {
     const data = imageDataRef.current;
     if (!data) return;
@@ -87,7 +92,7 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     setQuad({ tl: { x: x0, y: y0 }, tr: { x: x1, y: y0 }, br: { x: x1, y: y1 }, bl: { x: x0, y: y1 } });
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sample every well whenever the quad or grid changes.
+  // Sample every well whenever the quad or grid changes; also store locally for preview.
   useEffect(() => {
     const data = imageDataRef.current;
     if (!data) return;
@@ -97,13 +102,14 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
       br: { x: quad.br.x * data.width, y: quad.br.y * data.height },
       bl: { x: quad.bl.x * data.width, y: quad.bl.y * data.height },
     };
-    const wells: DetectedWell[] = [];
+    const result: DetectedWell[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        wells.push({ rgb: sampleQuadColor(data, cellQuad(imgQuad, r, c, rows, cols)).rgb });
+        result.push({ rgb: sampleQuadColor(data, cellQuad(imgQuad, r, c, rows, cols)).rgb });
       }
     }
-    onWells(wells);
+    setWells(result);
+    onWells(result);
   }, [quad, rows, cols, loaded, onWells]);
 
   const onDown = useCallback(
@@ -123,19 +129,30 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     const dx = (e.clientX - d.startX) / rect.width;
     const dy = (e.clientY - d.startY) / rect.height;
     const clamp = (v: number) => Math.min(1, Math.max(0, v));
-    const move = (p: Pt): Pt => ({ x: clamp(p.x + dx), y: clamp(p.y + dy) });
-    if (d.type === "move") {
-      setQuad({ tl: move(d.start.tl), tr: move(d.start.tr), br: move(d.start.br), bl: move(d.start.bl) });
-    } else {
-      setQuad({ ...d.start, [d.type]: move(d.start[d.type]) });
+    const moveXY = (p: Pt): Pt => ({ x: clamp(p.x + dx), y: clamp(p.y + dy) });
+    const moveX = (p: Pt): Pt => ({ x: clamp(p.x + dx), y: p.y });
+    const moveY = (p: Pt): Pt => ({ x: p.x, y: clamp(p.y + dy) });
+
+    const q = d.start;
+    switch (d.type) {
+      case "move":
+        setQuad({ tl: moveXY(q.tl), tr: moveXY(q.tr), br: moveXY(q.br), bl: moveXY(q.bl) });
+        break;
+      case "tl": setQuad({ ...q, tl: moveXY(q.tl) }); break;
+      case "tr": setQuad({ ...q, tr: moveXY(q.tr) }); break;
+      case "br": setQuad({ ...q, br: moveXY(q.br) }); break;
+      case "bl": setQuad({ ...q, bl: moveXY(q.bl) }); break;
+      // Edge handles: slide the full edge (constrained to one axis)
+      case "top":    setQuad({ ...q, tl: moveY(q.tl), tr: moveY(q.tr) }); break;
+      case "bottom": setQuad({ ...q, bl: moveY(q.bl), br: moveY(q.br) }); break;
+      case "left":   setQuad({ ...q, tl: moveX(q.tl), bl: moveX(q.bl) }); break;
+      case "right":  setQuad({ ...q, tr: moveX(q.tr), br: moveX(q.br) }); break;
     }
   }, []);
 
-  const onUp = useCallback(() => {
-    drag.current = null;
-  }, []);
+  const onUp = useCallback(() => { drag.current = null; }, []);
 
-  // Grid line endpoints in normalized space (straight segments under bilerp).
+  // Grid lines in normalized space.
   const vLines = Array.from({ length: cols + 1 }, (_, c) => {
     const u = c / cols;
     return [bilerp(quad, u, 0), bilerp(quad, u, 1)];
@@ -144,6 +161,7 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     const v = r / rows;
     return [bilerp(quad, 0, v), bilerp(quad, 1, v)];
   });
+
   const corners: { key: Corner; p: Pt }[] = [
     { key: "tl", p: quad.tl },
     { key: "tr", p: quad.tr },
@@ -151,10 +169,27 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     { key: "bl", p: quad.bl },
   ];
 
+  // Edge midpoint handles (normalized coords).
+  const edgeMids: { key: Edge; p: Pt; axis: "h" | "v" }[] = [
+    { key: "top",    p: bilerp(quad, 0.5, 0),   axis: "v" },
+    { key: "bottom", p: bilerp(quad, 0.5, 1),   axis: "v" },
+    { key: "left",   p: bilerp(quad, 0,   0.5), axis: "h" },
+    { key: "right",  p: bilerp(quad, 1,   0.5), axis: "h" },
+  ];
+
+  // Cell center points and colors for the live preview overlay.
+  const cellPreviews = wells.map((w, i) => {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const cellCenter = bilerp(quad, (c + 0.5) / cols, (r + 0.5) / rows);
+    return { cellCenter, rgb: w.rgb };
+  });
+
   return (
     <div className="canvas-wrap" onPointerMove={onMove} onPointerUp={onUp}>
       <canvas ref={displayRef} aria-label="Palette photo with adjustable well grid" role="img" />
       <svg className="grid-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
+        {/* Draggable interior polygon */}
         <polygon
           points={`${quad.tl.x},${quad.tl.y} ${quad.tr.x},${quad.tr.y} ${quad.br.x},${quad.br.y} ${quad.bl.x},${quad.bl.y}`}
           fill="rgba(110,168,254,0.08)"
@@ -162,15 +197,42 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
           style={{ pointerEvents: "auto", cursor: "move" }}
           onPointerDown={onDown("move")}
         />
+        {/* Grid lines */}
         {[...vLines, ...hLines].map(([a, b], i) => (
-          <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={1.5}
-            vectorEffect="non-scaling-stroke" />
+          <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+            stroke="var(--accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        ))}
+        {/* Live color previews — tiny swatch in each cell center */}
+        {cellPreviews.map(({ cellCenter, rgb }, i) => (
+          <rect
+            key={`prev-${i}`}
+            x={cellCenter.x - 0.022}
+            y={cellCenter.y - 0.022}
+            width={0.044}
+            height={0.044}
+            fill={`rgb(${rgb.r},${rgb.g},${rgb.b})`}
+            stroke="rgba(0,0,0,0.4)"
+            strokeWidth={0.003}
+            rx={0.006}
+            style={{ pointerEvents: "none" }}
+          />
         ))}
       </svg>
+      {/* Corner handles */}
       {corners.map(({ key, p }) => (
         <span
           key={key}
-          className="grid-handle"
+          className="grid-handle grid-handle-corner"
+          style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+          onPointerDown={onDown(key)}
+          aria-hidden
+        />
+      ))}
+      {/* Edge midpoint handles */}
+      {edgeMids.map(({ key, p, axis }) => (
+        <span
+          key={key}
+          className={`grid-handle grid-handle-edge grid-handle-edge-${axis}`}
           style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
           onPointerDown={onDown(key)}
           aria-hidden

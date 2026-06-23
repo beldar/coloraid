@@ -527,17 +527,42 @@ button.primary:disabled {
 }
 .grid-handle {
   position: absolute;
-  width: 26px;
-  height: 26px;
-  margin-left: -13px;
-  margin-top: -13px;
+  touch-action: none;
+  cursor: grab;
+  pointer-events: auto;
+}
+/* Corner handles: circular, 44px touch target */
+.grid-handle-corner {
+  width: 44px;
+  height: 44px;
+  margin-left: -22px;
+  margin-top: -22px;
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid #fff;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
-  touch-action: none;
-  cursor: grab;
-  pointer-events: auto;
+}
+/* Edge midpoint handles: pill-shaped, slide one axis only */
+.grid-handle-edge {
+  background: rgba(255, 255, 255, 0.85);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.grid-handle-edge-v {
+  width: 48px;
+  height: 20px;
+  margin-left: -24px;
+  margin-top: -10px;
+  border-radius: 10px;
+  cursor: ns-resize;
+}
+.grid-handle-edge-h {
+  width: 20px;
+  height: 48px;
+  margin-left: -10px;
+  margin-top: -24px;
+  border-radius: 10px;
+  cursor: ew-resize;
 }
 
 .well-grid {

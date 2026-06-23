@@ -168,6 +168,23 @@ axis), Fraunces display + Hanken Grotesk UI + mono data. Bottom tab bar, big tou
   washes; tapped ground → "Raw umber" card spotlit; reopened from gallery after nav →
   read sky → "Cerulean, pale wash ΔE 2.7". 37 tests pass; `tsc --noEmit` clean.
 
+## Milestone 5 — Vercel deploy prep + PWA (2026-06-23) — done
+- [x] PWA: `app/manifest.ts` (manifest.webmanifest), `public/sw.js` (app-shell cache,
+  network-first nav, SWR assets), `components/PWARegister.tsx` (registers SW), apple +
+  icons metadata in layout. Icons generated from `public/icon.svg` → 192/512/maskable/
+  apple-touch + `app/icon.png` favicon (ochre paint-drop on charcoal).
+- [x] `next.config.mjs`: `outputFileTracingRoot` pinned (a stray parent lockfile was
+  inferred as workspace root) — silences warning, correct Vercel file tracing.
+- [x] Production `next build` clean (9 routes prerendered). 37 tests pass.
+- [x] Personal photos gitignored (`tests/fixtures/*.{jpg,jpeg,png,webp,heic}`); tests
+  use synthetic/hardcoded data so the suite is self-contained.
+- [x] git init + commit on `main`; remote `git@github.com:beldar/coloraid.git`.
+- [ ] **PUSH BLOCKED in sandbox** (SSH keys passphrase-protected, agent empty) — user
+  runs `git push -u origin main` from their own terminal.
+- NOTE: `@ducanh2912/next-pwa` + `sharp` were added to package.json externally. PWA is
+  hand-rolled (doesn't use next-pwa); kept the deps + synced the lockfile so deploy
+  works. Decide later: keep lightweight SW, or migrate to next-pwa.
+
 ### Open / next (not yet built)
 - Optional 3-paint mixes (currently capped at 2).
 - "Leave paper white" suggestion for near-white targets (instead of Chinese White).

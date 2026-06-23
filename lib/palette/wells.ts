@@ -238,17 +238,24 @@ function pointInQuad(px: number, py: number, q: Quad): boolean {
 }
 
 /**
- * Sample a well color from a quad (perspective-aware), discarding glare by
- * averaging the dark luminance band — same idea as sampleWellColor, but the
- * region is an arbitrary convex quad rather than an axis-aligned rectangle.
+ * Sample a well color from a quad (perspective-aware).
+ *
+ * Uses a component-wise median after discarding confirmed specular highlights
+ * (very bright pixels with near-zero saturation — those are glare, not paint).
+ * The median is robust: as long as >50% of the cell pixels are actual paint,
+ * the median lands on the paint color regardless of rim shadows or tray gaps.
+ * The old dark-luminance-band approach would land on plastic dividers for vivid
+ * paints (yellow, red) because their high-luminance paint pixels sat above the
+ * 15–45th percentile window.
+ *
+ * The `band` parameter is kept for API compatibility but is no longer used.
  */
 export function sampleQuadColor(
   data: ImageLike,
   quad: Quad,
-  band: { lo?: number; hi?: number } = {},
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _band: { lo?: number; hi?: number } = {},
 ): { rgb: RGB; count: number } {
-  const lo = band.lo ?? 0.15;
-  const hi = band.hi ?? 0.45;
   const { width, height, data: px } = data;
   const xs = [quad.tl.x, quad.tr.x, quad.br.x, quad.bl.x];
   const ys = [quad.tl.y, quad.tr.y, quad.br.y, quad.bl.y];
@@ -257,7 +264,10 @@ export function sampleQuadColor(
   const y0 = Math.max(0, Math.floor(Math.min(...ys)));
   const y1 = Math.min(height - 1, Math.ceil(Math.max(...ys)));
 
-  const pixels: { r: number; g: number; b: number; l: number }[] = [];
+  const rs: number[] = [];
+  const gs: number[] = [];
+  const bs: number[] = [];
+
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (!pointInQuad(x, y, quad)) continue;
@@ -266,23 +276,22 @@ export function sampleQuadColor(
       const r = px[i];
       const g = px[i + 1];
       const b = px[i + 2];
-      pixels.push({ r, g, b, l: luminance(r, g, b) });
+      // Exclude pure specular highlights: very bright with near-zero saturation.
+      if (luminance(r, g, b) > 240 && chroma(r, g, b) < 15) continue;
+      rs.push(r);
+      gs.push(g);
+      bs.push(b);
     }
   }
-  if (pixels.length === 0) return { rgb: { r: 0, g: 0, b: 0 }, count: 0 };
-  pixels.sort((a, b) => a.l - b.l);
-  const s = Math.floor(pixels.length * lo);
-  const e = Math.max(s + 1, Math.floor(pixels.length * hi));
-  let sr = 0;
-  let sg = 0;
-  let sb = 0;
-  for (let i = s; i < e; i++) {
-    sr += pixels[i].r;
-    sg += pixels[i].g;
-    sb += pixels[i].b;
-  }
-  const n = e - s;
-  return { rgb: { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) }, count: n };
+
+  if (rs.length === 0) return { rgb: { r: 0, g: 0, b: 0 }, count: 0 };
+
+  rs.sort((a, b) => a - b);
+  gs.sort((a, b) => a - b);
+  bs.sort((a, b) => a - b);
+
+  const mid = Math.floor(rs.length / 2);
+  return { rgb: { r: rs[mid], g: gs[mid], b: bs[mid] }, count: rs.length };
 }
 
 /**
