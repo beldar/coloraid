@@ -146,6 +146,10 @@ export function detectWellGrid(
     return null;
   }
 
+  // Reject clustered false-peaks: e.g. 6 sub-pixel runs in a 30px hotspot instead of 6 real wells.
+  if (colCenters && cols > 1 && colCenters[colCenters.length - 1] - colCenters[0] < width * 0.15) return null;
+  if (rowCenters && rows > 1 && rowCenters[rowCenters.length - 1] - rowCenters[0] < height * 0.05) return null;
+
   const span = (centers: number[] | null, n: number, fullLo: number, fullHi: number): [number, number] => {
     if (!centers || n === 1) return [fullLo, fullHi];
     const lo = centers[0];

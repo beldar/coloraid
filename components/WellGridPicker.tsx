@@ -79,9 +79,8 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
   useEffect(() => {
     const data = imageDataRef.current;
     if (!data) return;
-    const bounds =
-      detectWellGrid(data, rows, cols, { bandTop: 0.5 }) ??
-      detectColorfulBounds(data, { minChroma: 55, bandTop: 0.5 });
+    const wgResult = detectWellGrid(data, rows, cols, { bandTop: 0.5 });
+    const bounds = wgResult ?? detectColorfulBounds(data, { minChroma: 55, bandTop: 0.5 });
     if (!bounds) return;
     const padX = bounds.w * 0.05;
     const padY = bounds.h * 0.05;

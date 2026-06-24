@@ -9,6 +9,7 @@ import { useImageFile } from "@/hooks/useImageFile";
 import { usePalette } from "@/lib/palette/storage";
 import { describeColor } from "@/lib/color/describe";
 import { PALETTE_PRESETS, numberedNames } from "@/lib/palette/presets";
+import { extractPaletteNames } from "@/lib/palette/ocr";
 
 type Mode = "auto" | "manual";
 
@@ -124,6 +125,8 @@ export default function PalettePage() {
 
 /* ---------- Auto-import from a palette photo ---------- */
 
+type OcrStatus = "idle" | "loading" | "done" | "error";
+
 function AutoImport({ onAdd }: { onAdd: (p: { name: string; rgb: SampleResult["rgb"]; lab: ReturnType<typeof describeColor>["lab"] }) => void }) {
   const { imageSrc, loadFile, reset } = useImageFile();
   const [presetId, setPresetId] = useState(PALETTE_PRESETS[0]?.id ?? "custom");
@@ -132,8 +135,9 @@ function AutoImport({ onAdd }: { onAdd: (p: { name: string; rgb: SampleResult["r
   const [wells, setWells] = useState<DetectedWell[]>([]);
   const [names, setNames] = useState<string[]>(PALETTE_PRESETS[0]?.names ?? []);
   const [added, setAdded] = useState(0);
-
-  const count = rows * cols;
+  const [ocrStatus, setOcrStatus] = useState<OcrStatus>("idle");
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrCount, setOcrCount] = useState(0);
 
   function applyPreset(id: string) {
     setPresetId(id);
@@ -161,6 +165,30 @@ function AutoImport({ onAdd }: { onAdd: (p: { name: string; rgb: SampleResult["r
     });
   }
 
+  async function readNamesFromPhoto() {
+    if (!imageSrc || wells.length === 0) return;
+    setOcrStatus("loading");
+    setOcrError(null);
+    try {
+      // Label cell order = well order (left→right, top→bottom). Assign directly.
+      const ocrNames = await extractPaletteNames(imageSrc, rows, cols);
+      const newNames = [...names];
+      let assigned = 0;
+      ocrNames.forEach((name, i) => {
+        if (i >= wells.length) return;
+        while (newNames.length <= i) newNames.push(`Color ${newNames.length + 1}`);
+        newNames[i] = name;
+        assigned++;
+      });
+      setNames(newNames);
+      setOcrCount(assigned);
+      setOcrStatus("done");
+    } catch (err) {
+      setOcrError(err instanceof Error ? err.message : "Unknown error");
+      setOcrStatus("error");
+    }
+  }
+
   function addAll() {
     wells.forEach((w, i) => {
       onAdd({ name: nameAt(i).trim() || `Color ${i + 1}`, rgb: w.rgb, lab: describeColor(w.rgb).lab });
@@ -172,8 +200,9 @@ function AutoImport({ onAdd }: { onAdd: (p: { name: string; rgb: SampleResult["r
     <section className="panel" style={{ marginTop: "1rem" }}>
       <h2 className="section-title">Import a whole palette from one photo</h2>
       <p className="hint" style={{ marginTop: 0 }}>
-        Photograph your set in good, even light. Pick your set below, frame the wells with
-        the grid, and Coloraid samples each color (ignoring the shiny glare) and names them.
+        Photograph your palette in good, even light. Frame the wells with the grid below, then
+        tap "Read names from label" — Coloraid reads the printed name cells and matches them to
+        each well automatically.
       </p>
 
       <div className="recipe-grid">
@@ -201,18 +230,40 @@ function AutoImport({ onAdd }: { onAdd: (p: { name: string; rgb: SampleResult["r
       {!imageSrc ? (
         <div style={{ marginTop: "0.75rem" }}>
           <Dropzone onFile={loadFile} title="Load a photo of your palette"
-            hint="Even light, plain background. Frame both rows of wells." />
+            hint="Include the box lid label so names can be read automatically." />
         </div>
       ) : (
         <>
           <div className="toolbar" style={{ marginTop: "0.75rem" }}>
             <span className="hint" style={{ margin: 0 }}>Drag the grid corners to frame the wells.</span>
-            <button className="reset" onClick={() => { reset(); setWells([]); setAdded(0); }}>New photo</button>
+            <button className="reset" onClick={() => { reset(); setWells([]); setAdded(0); setOcrStatus("idle"); }}>New photo</button>
           </div>
           <WellGridPicker imageSrc={imageSrc} rows={rows} cols={cols} onWells={handleWells} />
 
           {wells.length > 0 && (
             <>
+              {/* Read-names button */}
+              <div className="toolbar" style={{ marginTop: "0.75rem" }}>
+                <button
+                  className="primary"
+                  onClick={readNamesFromPhoto}
+                  disabled={ocrStatus === "loading"}
+                >
+                  {ocrStatus === "loading" ? "Reading label…" : "Read names from label"}
+                </button>
+                {ocrStatus === "done" && (
+                  <span className="hint" style={{ margin: 0, color: "var(--accent)" }}>
+                    {ocrCount} names read — check below and edit if needed.
+                  </span>
+                )}
+                {ocrStatus === "error" && (
+                  <span className="hint" style={{ margin: 0, color: "var(--danger, #e53)" }}>
+                    {ocrError ?? "Failed to read names."}
+                  </span>
+                )}
+              </div>
+
+              {/* Wells list */}
               <p className="hint">Detected {wells.length} wells — fix any name, then add them all.</p>
               <ul className="well-grid">
                 {wells.map((w, i) => (

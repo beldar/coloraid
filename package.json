@@ -12,8 +12,10 @@
     "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "culori": "^4.0.1",
     "next": "^15.3.0",
+    "openai": "^6.44.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
