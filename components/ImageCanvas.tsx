@@ -29,6 +29,7 @@ export default function ImageCanvas({ imageSrc, onSample }: Props) {
   const displayRef = useRef<HTMLCanvasElement>(null);
   const fullRef = useRef<HTMLCanvasElement | null>(null);
   const imageDataRef = useRef<ImageData | null>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const [marker, setMarker] = useState<{ x: number; y: number } | null>(null);
 
   // Load image into both canvases whenever the source changes.
@@ -57,21 +58,28 @@ export default function ImageCanvas({ imageSrc, onSample }: Props) {
     img.src = imageSrc;
   }, [imageSrc]);
 
-  const handlePointer = useCallback(
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    pointerStart.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const start = pointerStart.current;
+      pointerStart.current = null;
+      if (!start) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (dx * dx + dy * dy > 64) return; // scroll gesture, ignore
+
       const disp = displayRef.current;
       const imageData = imageDataRef.current;
       if (!disp || !imageData) return;
 
       const rect = disp.getBoundingClientRect();
-      // Map CSS click position -> intrinsic image pixel coordinates.
       const scaleX = disp.width / rect.width;
       const scaleY = disp.height / rect.height;
       const px = (e.clientX - rect.left) * scaleX;
       const py = (e.clientY - rect.top) * scaleY;
-
-      // Patch radius scales a little with image size so big photos average a
-      // comparable real-world area, not a pinpoint.
       const radius = Math.max(3, Math.round(Math.min(disp.width, disp.height) / 250));
       const { rgb, variance } = samplePatch(imageData, px, py, radius);
 
@@ -87,7 +95,8 @@ export default function ImageCanvas({ imageSrc, onSample }: Props) {
     <div className="canvas-wrap">
       <canvas
         ref={displayRef}
-        onPointerDown={handlePointer}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
         aria-label="Loaded image. Tap anywhere to read the color at that point."
         role="img"
       />

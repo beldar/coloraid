@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import StudioCanvas, { type SampleResult } from "@/components/StudioCanvas";
 import ColorReadout from "@/components/ColorReadout";
 import LayerList from "@/components/LayerList";
@@ -9,7 +9,9 @@ import Nav from "@/components/Nav";
 import { useImageLibrary } from "@/hooks/useImageLibrary";
 import { usePalette } from "@/lib/palette/storage";
 import { useCalibrations } from "@/lib/mix/calibration";
+import { describeColor } from "@/lib/color/describe";
 import type { Layer } from "@/lib/segment/segment";
+import type { Paint } from "@/lib/palette/types";
 
 export default function Studio() {
   const { items, imageSrc, currentId, loadFile, openId, remove, reset } = useImageLibrary();
@@ -126,16 +128,56 @@ export default function Studio() {
                 onHighlight={pickLayerFromList}
               />
             </>
-          ) : sample ? (
-            <ColorReadout rgb={sample.rgb} variance={sample.variance} palette={paints} />
           ) : (
-            <p className="hint">Tap anywhere on the photo to read its colour.</p>
+            <p className="hint">{sample ? "Tap the photo to pick a different colour." : "Tap anywhere on the photo to read its colour."}</p>
           )}
         </>
       )}
 
+      {!layersOn && <ColorSheet sample={sample} palette={paints} />}
       <Nav />
     </main>
+  );
+}
+
+/* ---------- Sticky bottom colour sheet ---------- */
+
+function ColorSheet({ sample, palette }: { sample: SampleResult | null; palette: Paint[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (sample) setExpanded(false); // collapse on every new tap
+  }, [sample]);
+
+  const desc = useMemo(() => (sample ? describeColor(sample.rgb) : null), [sample]);
+
+  const cls = `color-sheet${!sample ? "" : expanded ? " expanded" : " peeking"}`;
+
+  return (
+    <div className={cls} aria-live="polite">
+      <button
+        className="color-sheet-header"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label={expanded ? "Collapse colour info" : "Expand colour info"}
+      >
+        <div className="color-sheet-handle-row" aria-hidden>
+          <span className="color-sheet-drag" />
+        </div>
+        {desc && (
+          <div className="color-sheet-peek-row">
+            <span className="swatch sm" style={{ background: desc.hex }} aria-hidden />
+            <p className="color-sheet-sentence">{desc.sentence}</p>
+            <span className="color-sheet-chevron" aria-hidden>{expanded ? "▾" : "▴"}</span>
+          </div>
+        )}
+      </button>
+      {sample && expanded && (
+        <div className="color-sheet-body">
+          <ColorReadout rgb={sample.rgb} variance={sample.variance} palette={palette} />
+        </div>
+      )}
+    </div>
   );
 }
 

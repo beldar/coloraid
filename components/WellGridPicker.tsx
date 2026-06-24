@@ -81,7 +81,8 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
     if (!data) return;
     const wgResult = detectWellGrid(data, rows, cols, { bandTop: 0.5 });
     const bounds = wgResult ?? detectColorfulBounds(data, { minChroma: 55, bandTop: 0.5 });
-    if (!bounds) return;
+    // Reject degenerate detection (tiny cluster → all handles collapse to one point).
+    if (!bounds || bounds.w < data.width * 0.08 || bounds.h < data.height * 0.04) return;
     const padX = bounds.w * 0.05;
     const padY = bounds.h * 0.05;
     const x0 = Math.max(0, bounds.x - padX) / data.width;
@@ -185,7 +186,7 @@ export default function WellGridPicker({ imageSrc, rows, cols, onWells }: Props)
   });
 
   return (
-    <div className="canvas-wrap" onPointerMove={onMove} onPointerUp={onUp}>
+    <div className="canvas-wrap" style={{ touchAction: "none" }} onPointerMove={onMove} onPointerUp={onUp}>
       <canvas ref={displayRef} aria-label="Palette photo with adjustable well grid" role="img" />
       <svg className="grid-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
         {/* Draggable interior polygon */}
