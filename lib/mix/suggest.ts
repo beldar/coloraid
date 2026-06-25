@@ -1,4 +1,4 @@
-import { differenceCiede2000 } from "culori";
+import { converter, differenceCiede2000 } from "culori";
 import type { Lab } from "@/lib/color/describe";
 import type { Paint } from "@/lib/palette/types";
 import { predictMix } from "./km";
@@ -6,6 +6,7 @@ import { predictMixCalibrated, type CorrectedPrediction } from "./calibration";
 import { DILUTION_LEVELS, dilutionLabel, type CalibrationSample, type Recipe } from "./types";
 
 const deltaE = differenceCiede2000();
+const toLch = converter("lch");
 
 // Mixing ratios for 2-paint combos (share of the first paint).
 const RATIO_GRID = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
@@ -33,6 +34,33 @@ function cancellationPenalty(recipe: Recipe, palette: Paint[], byId: Map<string,
   const resultChroma = chroma(predictMix({ components: recipe.components, dilution: 1 }, palette).lab);
   const cancelled = Math.max(0, meanChroma - resultChroma);
   return Math.min(1.2, 0.05 * cancelled);
+}
+
+/**
+ * Penalty for predictions whose hue direction is opposite to the target's.
+ *
+ * A colorblind painter sampling a desaturated sky (LCh C≈5, h≈270°) still
+ * expects blue-direction suggestions — not warm white/neutral ones that happen
+ * to be closer in ΔE. When the target has even a slight hue bias (C > 2) and
+ * the predicted color points in the wrong hue family (angle > 90°), we penalise
+ * the candidate so hue-coherent paints are preferred over hue-wrong near-neutrals.
+ *
+ * Only fires when the prediction itself is chromatic enough to have a defined hue
+ * (C ≥ 3) — near-neutral predictions (ghost washes approaching paper white) are
+ * not penalised because they don't actively point the wrong way.
+ */
+function hueDirectionPenalty(prediction: Lab, target: Lab): number {
+  const tLch = toLch({ mode: "lab", l: target.l, a: target.a, b: target.b });
+  if ((tLch.c ?? 0) < 2 || !Number.isFinite(tLch.h)) return 0;
+
+  const pLch = toLch({ mode: "lab", l: prediction.l, a: prediction.a, b: prediction.b });
+  if ((pLch.c ?? 0) < 3 || !Number.isFinite(pLch.h)) return 0;
+
+  const diff = Math.abs((tLch.h as number) - (pLch.h as number));
+  const angle = Math.min(diff, 360 - diff);
+  if (angle <= 90) return 0;
+  const t = (angle - 90) / 90; // 0 → 1 as angle goes 90° → 180°
+  return Math.min(4.0, 3.0 * t);
 }
 
 export interface SuggestedRecipe {
@@ -66,14 +94,37 @@ function isWhitePaint(p: Paint): boolean {
   return Math.min(r, g, b) > 205 && Math.max(r, g, b) - Math.min(r, g, b) < 16;
 }
 
-function recipeText(recipe: Recipe, palette: Paint[]): string {
+function recipeText(recipe: Recipe, palette: Paint[], target?: Lab): string {
   const byId = new Map(palette.map((p) => [p.id, p]));
   const total = recipe.components.reduce((s, c) => s + c.weight, 0) || 1;
   const dil = dilutionLabel(recipe.dilution);
-  // "masstone" is full strength — not a wash; everything else reads "<label> wash".
   const strength = dil === "masstone" ? "at full strength" : `${dil} wash`;
+
+  // Sort by weight descending, but when a target hue is known, promote the paint
+  // whose hue is closer to the target — so "blue + touch of umber" reads correctly
+  // rather than "umber + touch of blue" for sky-direction mixes.
+  const targetH = target ? (toLch({ mode: "lab", l: target.l, a: target.a, b: target.b }).h ?? null) : null;
+
   const parts = [...recipe.components]
-    .sort((a, b) => b.weight - a.weight)
+    .sort((ca, cb) => {
+      if (targetH !== null && recipe.components.length > 1) {
+        const pa = byId.get(ca.paintId);
+        const pb = byId.get(cb.paintId);
+        if (pa && pb) {
+          const lchA = toLch({ mode: "lab", l: pa.lab.l, a: pa.lab.a, b: pa.lab.b });
+          const lchB = toLch({ mode: "lab", l: pb.lab.l, a: pb.lab.a, b: pb.lab.b });
+          // Only re-order when both paints have meaningful chroma AND the weight
+          // difference is ≤15% — otherwise weight clearly dominates.
+          const wDiff = Math.abs(ca.weight - cb.weight) / total;
+          if (wDiff <= 0.15 && (lchA.c ?? 0) > 5 && (lchB.c ?? 0) > 5) {
+            const dA = Math.min(Math.abs((lchA.h ?? 0) - targetH), 360 - Math.abs((lchA.h ?? 0) - targetH));
+            const dB = Math.min(Math.abs((lchB.h ?? 0) - targetH), 360 - Math.abs((lchB.h ?? 0) - targetH));
+            if (dA !== dB) return dA - dB; // closer hue first
+          }
+        }
+      }
+      return cb.weight - ca.weight; // heavier first
+    })
     .map((c) => ({ name: byId.get(c.paintId)?.name ?? "?", pct: Math.round((c.weight / total) * 100) }));
 
   if (parts.length === 1) {
@@ -106,8 +157,15 @@ export function suggestMixes(
   const evaluate = (recipe: Recipe) => {
     const prediction = predictMixCalibrated(recipe, palette, samples);
     const d = deltaE(t, labColor(prediction.lab));
-    const score = d + cancellationPenalty(recipe, palette, byId);
-    results.push({ recipe, prediction, deltaE: d, text: recipeText(recipe, palette), score });
+    // Prefer simpler single-paint recipes when they're close: a diluted single
+    // pigment is easier to mix and more predictable than a multi-paint combo.
+    const parsimony = recipe.components.length > 1 ? 0.5 : 0;
+    const score =
+      d +
+      cancellationPenalty(recipe, palette, byId) +
+      parsimony +
+      hueDirectionPenalty(prediction.lab, target);
+    results.push({ recipe, prediction, deltaE: d, text: recipeText(recipe, palette, target), score });
   };
 
   for (const { value: dilution } of DILUTION_LEVELS) {

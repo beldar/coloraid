@@ -46,13 +46,17 @@ export default function ImageCanvas({ imageSrc, onSample }: Props) {
       fullRef.current = full;
       imageDataRef.current = fctx.getImageData(0, 0, full.width, full.height);
 
-      // Visible canvas: same intrinsic size, CSS scales it down responsively.
+      // Visible canvas: size to container CSS pixels × DPR so canvas pixels map
+      // 1:1 to physical screen pixels — avoids blurriness on Retina displays.
       const disp = displayRef.current;
       if (!disp) return;
-      disp.width = img.naturalWidth;
-      disp.height = img.naturalHeight;
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = disp.parentElement?.clientWidth || img.naturalWidth;
+      const cssH = Math.round(cssW * img.naturalHeight / img.naturalWidth);
+      disp.width = Math.round(cssW * dpr);
+      disp.height = Math.round(cssH * dpr);
       const dctx = disp.getContext("2d");
-      dctx?.drawImage(img, 0, 0);
+      dctx?.drawImage(img, 0, 0, disp.width, disp.height);
       setMarker(null);
     };
     img.src = imageSrc;

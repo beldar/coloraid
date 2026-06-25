@@ -44,6 +44,10 @@ function recipeNames(ids: string[]): string[] {
 const CASES: { label: string; rgb: RGB; expectAnyOf: string[]; maxDeltaE: number }[] = [
   { label: "sky blue", rgb: { r: 120, g: 160, b: 200 }, expectAnyOf: ["Cerulean Blue Hue", "Ultramarine"], maxDeltaE: 12 },
   { label: "pale haze sky", rgb: { r: 165, g: 190, b: 210 }, expectAnyOf: ["Cerulean Blue Hue", "Ultramarine"], maxDeltaE: 12 },
+  // Very pale skies — dark blues can only reach L≈74 at "faint" dilution; mist/ghost
+  // extend the range so Cerulean still wins over Chinese White for washed-out sky.
+  { label: "very pale sky (L≈83)", rgb: { r: 190, g: 210, b: 228 }, expectAnyOf: ["Cerulean Blue Hue", "Ultramarine"], maxDeltaE: 14 },
+  { label: "washed-out sky (L≈87)", rgb: { r: 210, g: 220, b: 235 }, expectAnyOf: ["Cerulean Blue Hue", "Ultramarine"], maxDeltaE: 14 },
   { label: "sunlit sandstone", rgb: { r: 170, g: 120, b: 95 }, expectAnyOf: ["Burnt Sienna", "Yellow Ochre", "Cadmium Red Pale Hue"], maxDeltaE: 12 },
   { label: "shadowed rock", rgb: { r: 100, g: 70, b: 62 }, expectAnyOf: ["Burnt Sienna", "Burnt Umber", "Alizarin Crimson Hue"], maxDeltaE: 12 },
   { label: "dry grass", rgb: { r: 150, g: 138, b: 92 }, expectAnyOf: ["Yellow Ochre", "Lemon Yellow Hue", "Sap Green"], maxDeltaE: 13 },

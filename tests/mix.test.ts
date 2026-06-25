@@ -37,14 +37,15 @@ describe("suggestMixes", () => {
     expect(best.recipe.components[0].paintId).toBe("blue");
   });
 
-  it("ranks best-first (ΔE plus a small forgiveness penalty, capped at 1.2)", () => {
+  it("ranks best-first (ΔE plus small forgiveness penalties)", () => {
     const target = describeColor({ r: 90, g: 120, b: 80 }).lab; // a muted green
     const results = suggestMixes(target, palette, []);
     expect(results.length).toBeGreaterThan(0);
-    // The top pick's ΔE is within the penalty cap of every other option, i.e. we
-    // never promote a clearly-worse match — we only re-order near-ties.
+    // Score = deltaE + cancellation (cap 1.2) + parsimony (0.5) + hue penalty (cap 4.0).
+    // The top-ranked result's deltaE may be above other results' deltaE by at most
+    // the total penalty cap (≤5.7), so we only re-order near-ties or hue-wrong candidates.
     for (const r of results) {
-      expect(results[0].deltaE).toBeLessThanOrEqual(r.deltaE + 1.2 + 1e-9);
+      expect(results[0].deltaE).toBeLessThanOrEqual(r.deltaE + 6.0 + 1e-9);
     }
   });
 });

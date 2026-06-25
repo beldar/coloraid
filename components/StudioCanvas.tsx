@@ -25,16 +25,28 @@ interface Props {
   onSegmented: (layers: Layer[]) => void;
 }
 
-const SEG_MAX = 460; // working resolution for segmentation + display
+const SEG_MAX = 460; // working resolution for segmentation only — display uses container×DPR
 
 type Seg = ReturnType<typeof segmentImage>;
+
+/** Put ImageData onto a new canvas element so it can be drawn scaled via drawImage. */
+function toCanvas(data: ImageData): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = data.width;
+  c.height = data.height;
+  c.getContext("2d")?.putImageData(data, 0, 0);
+  return c;
+}
 
 /**
  * One canvas, two modes. "Read" samples the full-resolution pixels for an exact
  * colour. "Layers" segments a downscaled copy into flat colours, renders the
  * paint-by-numbers map, hit-tests a tap to a layer, and can spotlight one layer.
- * Display runs at the downscaled size (CSS-scaled); exact reads still use the
- * full-res buffer so accuracy doesn't depend on screen size.
+ *
+ * Segmentation runs at SEG_MAX resolution for performance. The display canvas is
+ * sized to the container's CSS pixels × devicePixelRatio so pixels map 1:1 to
+ * physical screen pixels — avoiding the blurriness that comes from CSS-upscaling
+ * a small canvas.
  */
 export default function StudioCanvas({
   imageSrc,
@@ -47,18 +59,23 @@ export default function StudioCanvas({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null); // original image, kept alive for sharp display
   const fullRef = useRef<ImageData | null>(null);
   const baseRef = useRef<ImageData | null>(null);
   const posterRef = useRef<ImageData | null>(null);
+  const posterCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const labelsRef = useRef<Uint16Array | null>(null);
+
   const segRef = useRef<Seg | null>(null);
   const [loaded, setLoaded] = useState(0);
   const [marker, setMarker] = useState<{ u: number; v: number } | null>(null);
 
-  // Decode once: full-res buffer for reads, downscaled buffer for layers.
+  // Decode once: full-res buffer for reads, downscaled buffer for segmentation.
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
+      imgRef.current = img; // keep alive — drawImage(img) is the sharpest display path
+
       const full = document.createElement("canvas");
       full.width = img.naturalWidth;
       full.height = img.naturalHeight;
@@ -67,6 +84,7 @@ export default function StudioCanvas({
       fctx.drawImage(img, 0, 0);
       fullRef.current = fctx.getImageData(0, 0, full.width, full.height);
 
+      // Downscale for segmentation only — display uses the original img element.
       const scale = Math.min(1, SEG_MAX / Math.max(img.naturalWidth, img.naturalHeight));
       const w = Math.max(1, Math.round(img.naturalWidth * scale));
       const h = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -78,12 +96,19 @@ export default function StudioCanvas({
       octx.drawImage(img, 0, 0, w, h);
       baseRef.current = octx.getImageData(0, 0, w, h);
 
+      // Size the display canvas to container CSS pixels × DPR so canvas pixels
+      // map 1:1 to physical screen pixels — no blurry CSS upscaling.
       const c = canvasRef.current;
       if (c) {
-        c.width = w;
-        c.height = h;
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = c.parentElement?.clientWidth || img.naturalWidth;
+        c.width = Math.round(cssW * dpr);
+        c.height = Math.round(c.width * img.naturalHeight / img.naturalWidth);
       }
-      segRef.current = null; // force re-segment
+
+      segRef.current = null;
+      posterRef.current = null;
+      posterCanvasRef.current = null;
       setMarker(null);
       setLoaded((v) => v + 1);
     };
@@ -122,6 +147,7 @@ export default function StudioCanvas({
     segRef.current = seg;
     labelsRef.current = labels;
     posterRef.current = poster;
+    posterCanvasRef.current = toCanvas(poster);
     onSegmented(seg.layers);
     return seg;
   }, [k, onSegmented]);
@@ -130,29 +156,32 @@ export default function StudioCanvas({
   useEffect(() => {
     segRef.current = null;
     labelsRef.current = null;
+    posterRef.current = null;
+    posterCanvasRef.current = null;
     if (layersOn) setLoaded((v) => v + 1);
   }, [k, layersOn]);
 
   // Paint the canvas for the current mode / highlight.
   useEffect(() => {
-    const base = baseRef.current;
     const c = canvasRef.current;
-    if (!base || !c) return;
+    if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
 
     if (!layersOn) {
-      ctx.putImageData(base, 0, 0);
+      const imgEl = imgRef.current;
+      if (imgEl) ctx.drawImage(imgEl, 0, 0, c.width, c.height);
       return;
     }
 
     ensureSeg();
     const poster = posterRef.current;
     const labels = labelsRef.current;
-    if (!poster || !labels) return;
+    const posterCanvas = posterCanvasRef.current;
+    if (!poster || !labels || !posterCanvas) return;
 
     if (highlight == null) {
-      ctx.putImageData(poster, 0, 0);
+      ctx.drawImage(posterCanvas, 0, 0, c.width, c.height);
       return;
     }
 
@@ -168,7 +197,7 @@ export default function StudioCanvas({
       d[i + 2] = s[i + 2] * f;
       d[i + 3] = 255;
     }
-    ctx.putImageData(out, 0, 0);
+    ctx.drawImage(toCanvas(out), 0, 0, c.width, c.height);
   }, [loaded, layersOn, highlight, ensureSeg]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {

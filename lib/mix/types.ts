@@ -36,6 +36,11 @@ export const DILUTION_LEVELS: { label: string; value: number }[] = [
   { label: "glaze", value: 0.13 },
   { label: "pale", value: 0.07 },
   { label: "faint", value: 0.035 },
+  // Very thin washes for pale sky tints and other highly-diluted targets.
+  // Dark pigments (Ultramarine, Cerulean) can only reach L≈75 at "faint";
+  // "mist" and "ghost" let them reach L≈82 and L≈88 respectively — pale sky territory.
+  { label: "mist", value: 0.015 },
+  { label: "ghost", value: 0.006 },
 ];
 
 export function dilutionLabel(value: number): string {
