@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { samplePatch, type RGB } from "@/lib/color/sampling";
 import { segmentImage, type Layer } from "@/lib/segment/segment";
+import CropOverlay from "./CropOverlay";
 
 export interface SampleResult {
   rgb: RGB;
@@ -11,18 +12,15 @@ export interface SampleResult {
 
 interface Props {
   imageSrc: string;
-  /** When true, show the flat colour-layer map and tap to identify a layer. */
   layersOn: boolean;
-  /** Number of layers (k). */
   k: number;
-  /** Layer index to spotlight (dims the rest), or null. */
   highlight: number | null;
-  /** Exact colour read at a point (layers off). */
+  cropMode?: boolean;
   onSample: (r: SampleResult) => void;
-  /** A layer region was tapped (layers on). */
   onPickLayer: (index: number) => void;
-  /** Fired after (re)segmentation so the parent can render the legend. */
   onSegmented: (layers: Layer[]) => void;
+  onCrop?: (blob: Blob) => void;
+  onCancelCrop?: () => void;
 }
 
 const SEG_MAX = 460; // working resolution for segmentation only — display uses container×DPR
@@ -53,9 +51,12 @@ export default function StudioCanvas({
   layersOn,
   k,
   highlight,
+  cropMode = false,
   onSample,
   onPickLayer,
   onSegmented,
+  onCrop,
+  onCancelCrop,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
@@ -244,6 +245,21 @@ export default function StudioCanvas({
     [layersOn, onSample, onPickLayer],
   );
 
+  const handleApplyCrop = useCallback((crop: { x: number; y: number; w: number; h: number }) => {
+    const imgEl = imgRef.current;
+    if (!imgEl || !onCrop) return;
+    const { naturalWidth: nw, naturalHeight: nh } = imgEl;
+    const sx = Math.round(crop.x * nw);
+    const sy = Math.round(crop.y * nh);
+    const sw = Math.round(crop.w * nw);
+    const sh = Math.round(crop.h * nh);
+    const off = document.createElement("canvas");
+    off.width = sw;
+    off.height = sh;
+    off.getContext("2d")?.drawImage(imgEl, sx, sy, sw, sh, 0, 0, sw, sh);
+    off.toBlob((blob) => { if (blob) onCrop(blob); }, "image/jpeg", 0.92);
+  }, [onCrop]);
+
   return (
     <div className="canvas-wrap">
       <canvas
@@ -257,12 +273,15 @@ export default function StudioCanvas({
         }
         role="img"
       />
-      {marker && (
+      {!cropMode && marker && (
         <span
           className="tap-marker"
           aria-hidden
           style={{ left: `${marker.u * 100}%`, top: `${marker.v * 100}%` }}
         />
+      )}
+      {cropMode && (
+        <CropOverlay onApply={handleApplyCrop} onCancel={onCancelCrop ?? (() => {})} />
       )}
     </div>
   );

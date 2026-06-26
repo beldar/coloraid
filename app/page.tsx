@@ -20,6 +20,7 @@ export default function Studio() {
 
   const [layersOn, setLayersOn] = useState(false);
   const [k, setK] = useState(6);
+  const [cropMode, setCropMode] = useState(false);
   const [sample, setSample] = useState<SampleResult | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -45,6 +46,13 @@ export default function Studio() {
     setSample(null);
     setHighlight(null);
     setLayersOn(false);
+    setCropMode(false);
+  }
+
+  async function handleCrop(blob: Blob) {
+    setCropMode(false);
+    const file = new File([blob], "cropped.jpg", { type: "image/jpeg" });
+    await loadFile(file);
   }
 
   return (
@@ -73,20 +81,22 @@ export default function Studio() {
       ) : (
         <>
           <div className="studio-toolbar">
-            <button
-              type="button"
-              className={`toggle${layersOn ? " on" : ""}`}
-              role="switch"
-              aria-checked={layersOn}
-              onClick={toggleLayers}
-            >
-              <span className="toggle-track" aria-hidden>
-                <span className="toggle-thumb" />
-              </span>
-              Colour layers
-            </button>
+            {!cropMode && (
+              <button
+                type="button"
+                className={`toggle${layersOn ? " on" : ""}`}
+                role="switch"
+                aria-checked={layersOn}
+                onClick={toggleLayers}
+              >
+                <span className="toggle-track" aria-hidden>
+                  <span className="toggle-thumb" />
+                </span>
+                Colour layers
+              </button>
+            )}
 
-            {layersOn && (
+            {!cropMode && layersOn && (
               <label className="layers-k">
                 <span className="k-label">{layers.length || k} layers</span>
                 <input
@@ -100,8 +110,14 @@ export default function Studio() {
               </label>
             )}
 
-            <button className="ghost-btn" onClick={newPhoto}>
-              Close
+            {!cropMode && (
+              <button className="ghost-btn" onClick={() => { setCropMode(true); setLayersOn(false); }}>
+                Crop
+              </button>
+            )}
+
+            <button className="ghost-btn" onClick={cropMode ? () => setCropMode(false) : newPhoto}>
+              {cropMode ? "Cancel" : "Close"}
             </button>
           </div>
 
@@ -110,9 +126,12 @@ export default function Studio() {
             layersOn={layersOn}
             k={k}
             highlight={highlight}
+            cropMode={cropMode}
             onSample={setSample}
             onPickLayer={(i) => setHighlight(i)}
             onSegmented={onSegmented}
+            onCrop={handleCrop}
+            onCancelCrop={() => setCropMode(false)}
           />
 
           {layersOn ? (

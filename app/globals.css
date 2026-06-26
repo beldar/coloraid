@@ -814,6 +814,78 @@ button.primary:disabled {
   transform: scale(0.96);
 }
 
+/* ── Crop overlay ─────────────────────────────────────────────────────────── */
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden; /* clips the crop-box box-shadow to the canvas bounds */
+  touch-action: none;
+  user-select: none;
+  z-index: 2;
+}
+
+.crop-box {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-sizing: border-box;
+  cursor: move;
+}
+
+/* Rule-of-thirds grid lines */
+.crop-box::before,
+.crop-box::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.crop-box::before {
+  border-left:  1px solid rgba(255,255,255,0.25);
+  border-right: 1px solid rgba(255,255,255,0.25);
+  left: 33.33%;
+  right: 33.33%;
+}
+.crop-box::after {
+  border-top:    1px solid rgba(255,255,255,0.25);
+  border-bottom: 1px solid rgba(255,255,255,0.25);
+  top: 33.33%;
+  bottom: 33.33%;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  z-index: 1;
+}
+
+.crop-actions {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 3;
+}
+
+.crop-actions .ghost-btn {
+  margin-left: 0;
+  backdrop-filter: blur(6px);
+  background: rgba(26, 20, 7, 0.7);
+}
+
+.crop-apply-btn {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
 /* Tap marker on the canvas (positioned by % so it scales with the canvas) */
 .tap-marker {
   position: absolute;
